@@ -21,7 +21,11 @@ const fetchRelayerFee = async ({ originDomain, destinationDomain }) => {
   return BigInt(hex)
 }
 
-const parseBridgeCall = async ({ srcChainId = 1, destChainId, moduleData }) => {
+const parseBridgeCall = async ({
+  srcChainId = 8453,
+  destChainId,
+  moduleData,
+}) => {
   const { dao } = await getNetwork(destChainId)
 
   // get bridge info on receiving chain
@@ -163,9 +167,9 @@ async function simulateDestCalls(xCalls) {
   const abiCoder = ethers.AbiCoder.defaultAbiCoder()
   const destChainCalls = xCalls.map(
     ({ transferId, params: { callData, destinationDomain } }) => {
-      const network = Object.values(networks).find((network) =>
-        network.dao.governanceBridge
-          ? network.dao.governanceBridge.domainId.toString() ==
+      const network = Object.values(networks).find((n) =>
+        n.dao && n.dao.governanceBridge
+          ? n.dao.governanceBridge.domainId.toString() ==
             destinationDomain.toString()
           : false
       )

@@ -61,6 +61,11 @@ export function useAuthenticate() {
         const { walletAddress } = response.data
         if (walletAddress) {
           await onSignedIn(walletAddress)
+          window.dispatchEvent(
+            new CustomEvent('locksmith.authenticated', {
+              detail: walletAddress,
+            })
+          )
           return true
         }
       } catch (error) {
@@ -92,7 +97,6 @@ export function useAuthenticate() {
     try {
       const { data: nonce } = await locksmith.nonce()
       const siweResult = await siweSign(nonce, '')
-
       if (siweResult) {
         const { message, signature } = siweResult
         const response = await locksmith.login({
@@ -126,8 +130,12 @@ export function useAuthenticate() {
   const signInWithPrivy = async ({ onshowUI }: { onshowUI: () => void }) => {
     if (!(await signInWithExistingSession())) {
       setAccount(undefined)
-      if (privyAuthenticated) {
-        onSignedInWithPrivy()
+      if (privyAuthenticated && user) {
+        const signedIn = await onSignedInWithPrivy(user)
+        if (!signedIn) {
+          privyLogin()
+          onshowUI()
+        }
       } else {
         privyLogin()
         onshowUI()

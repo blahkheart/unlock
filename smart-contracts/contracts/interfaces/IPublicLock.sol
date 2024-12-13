@@ -21,6 +21,7 @@ interface IPublicLock {
     uint value;
     address recipient;
     address referrer;
+    address protocolReferrer;
     address keyManager;
     bytes data;
     uint additionalPeriods;
@@ -571,6 +572,9 @@ interface IPublicLock {
   function renounceRole(bytes32 role, address account) external;
 
   function hasRole(bytes32 role, address account) external view returns (bool);
+
+  // helper function
+  function renounceLockManager() external;
 
   /** `owner()` is provided as an helper to mimick the `Ownable` contract ABI.
    * The `Ownable` logic is used by many 3rd party services to determine

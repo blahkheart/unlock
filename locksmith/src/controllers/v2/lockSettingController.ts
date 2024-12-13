@@ -3,8 +3,7 @@ import { Request, RequestHandler, Response } from 'express'
 import Normalizer from '../../utils/normalizer'
 import logger from '../../logger'
 import * as lockSettingOperations from '../../operations/lockSettingOperations'
-import networks from '@unlock-protocol/networks'
-import { Web3Service } from '@unlock-protocol/unlock-js'
+import { getWeb3Service } from '../../initializers'
 
 const LockSettingSchema = z.object({
   sendEmail: z
@@ -74,6 +73,7 @@ const LockSettingSchema = z.object({
     )
     .nullish(),
   passwords: z.array(z.string()).optional().optional(),
+  allowList: z.array(z.string()).optional().optional(),
 })
 
 export type LockSettingProps = z.infer<typeof LockSettingSchema>
@@ -92,6 +92,7 @@ export const DEFAULT_LOCK_SETTINGS: LockSettingProps = {
   promoCodes: [],
   requiredGitcoinPassportScore: undefined,
   passwords: [],
+  allowList: [],
 }
 
 export const updateSettings: RequestHandler = async (
@@ -125,7 +126,7 @@ export const getSettings: RequestHandler = async (
   response: Response
 ) => {
   try {
-    const web3Service = new Web3Service(networks)
+    const web3Service = getWeb3Service()
     const lockAddress = Normalizer.ethereumAddress(request.params.lockAddress)
     const network = Number(request.params.network)
 

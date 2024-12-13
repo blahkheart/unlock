@@ -30,7 +30,7 @@ pragma solidity 0.8.21;
 import {ProxyAdmin, StorageSlot, TransparentUpgradeableProxy, ITransparentUpgradeableProxy} from "./utils/UnlockProxyAdmin.sol";
 import "./utils/UnlockOwnable.sol";
 import "./utils/UnlockInitializable.sol";
-import "./interfaces//IUniswapOracleV3.sol";
+import "./interfaces/IUniswapOracleV3.sol";
 import "./interfaces/IPublicLock.sol";
 import "./interfaces/IUnlock.sol";
 import "./interfaces/IMintableERC20.sol";
@@ -106,6 +106,9 @@ contract Unlock is UnlockInitializable, UnlockOwnable {
   // UDT SwapBurner contract address
   address public swapBurnerAddress;
 
+  // addresse with emply impl used to "burn" lock
+  address public burnedLockImpl;
+
   // errors
   error Unlock__MANAGER_ONLY();
   error Unlock__VERSION_TOO_HIGH();
@@ -150,6 +153,8 @@ contract Unlock is UnlockInitializable, UnlockOwnable {
     address indexed oldAddress,
     address indexed newAddress
   );
+
+  event LockBurned(address lockAddress);
 
   // Use initialize instead of a constructor to support proxies (for upgradeability via OZ).
   function initialize(address _unlockOwner) public initializer {
@@ -201,7 +206,7 @@ contract Unlock is UnlockInitializable, UnlockOwnable {
     // claim the template so that no-one else could
     try IPublicLock(impl).initialize(address(this), 0, address(0), 0, 0, "") {
       // renounce Unlock's lock manager role that was added during initialization
-      IPublicLock(impl).revokeRole(keccak256("LOCK_MANAGER"), address(this));
+      IPublicLock(impl).renounceRole(keccak256("LOCK_MANAGER"), address(this));
     } catch {
       // failure means that the template is already initialized
     }
@@ -388,6 +393,31 @@ contract Unlock is UnlockInitializable, UnlockOwnable {
 
     emit LockUpgraded(lockAddress, version);
     return lockAddress;
+  }
+
+  /**
+   * Disable a lock
+   * @dev Upgrade to an empty implementation
+   * @param lockAddress the address of the lock to be upgraded
+   * @custom:oz-upgrades-unsafe-allow-reachable delegatecall
+   */
+  function burnLock(address lockAddress) public {
+    if (proxyAdminAddress == address(0)) {
+      revert Unlock__MISSING_PROXY_ADMIN();
+    }
+
+    // check perms
+    if (_isLockManager(lockAddress, msg.sender) != true) {
+      revert Unlock__MANAGER_ONLY();
+    }
+
+    // upgrade to empty implementation
+    ITransparentUpgradeableProxy proxy = ITransparentUpgradeableProxy(
+      lockAddress
+    );
+    proxyAdmin.upgrade(proxy, burnedLockImpl);
+
+    emit LockBurned(lockAddress);
   }
 
   function _isLockManager(
@@ -627,6 +657,13 @@ contract Unlock is UnlockInitializable, UnlockOwnable {
    */
   function getGlobalBaseTokenURI() external view returns (string memory) {
     return globalBaseTokenURI;
+  }
+
+  /**
+   * @param implAddress the address of the empty implementation used to disable locks
+   */
+  function setBurnedLockImpl(address implAddress) external onlyOwner {
+    burnedLockImpl = implAddress;
   }
 
   /**
