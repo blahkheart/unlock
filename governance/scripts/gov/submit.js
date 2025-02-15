@@ -19,6 +19,10 @@ async function main({ proposal, govAddress }) {
     govAddress,
   })
   const receipt = await proposalTx.wait()
+  console.log('Transaction Receipt:', receipt)
+
+  // Check all emitted events in the transaction
+  console.log('Logs from Receipt:', receipt.logs)
   const { event, hash } = await getEvent(receipt, 'ProposalCreated')
 
   // check for failure
