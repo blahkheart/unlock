@@ -13,6 +13,7 @@ import ReactMarkdown from 'react-markdown'
 import { terms } from '../src/utils/terms'
 import { UPAirdrops } from '@unlock-protocol/contracts'
 import { useEligibility } from './hooks/useEligibility'
+import { useDelegation } from './hooks/useDelegation'
 
 interface CampaignDetailContentProps {
   airdrop: AirdropData
@@ -68,6 +69,7 @@ export default function CampaignDetailContent({
   const { authenticated } = usePrivy()
   const { wallets } = useWallets()
   const [termsOfServiceSignature, setTermsOfServiceSignature] = useState('')
+  const [delegating, setDelegating] = useState(false)
 
   useEffect(() => {
     setTermsOfServiceSignature('')
@@ -77,6 +79,10 @@ export default function CampaignDetailContent({
     data: { eligible, claimed },
     refetch,
   } = useEligibility(airdrop)
+
+  const {
+    data: { hasDelegated, canClaim },
+  } = useDelegation(airdrop)
 
   const eligibleFormatted = eligible
     ? ethers.formatUnits(eligible, airdrop.token?.decimals)
@@ -119,6 +125,43 @@ export default function CampaignDetailContent({
       setTermsOfServiceSignature(signature)
     } else {
       setTermsOfServiceSignature('')
+    }
+  }
+
+  const onDelegate = async () => {
+    try {
+      setDelegating(true)
+      const provider = await wallets[0].getEthereumProvider()
+      const ethersProvider = new ethers.BrowserProvider(provider)
+      const signer = await ethersProvider.getSigner()
+
+      await wallets[0].switchChain(airdrop.chainId)
+
+      // Connect to the token contract
+      const tokenAbi = ['function delegate(address delegatee) external']
+      const tokenContract = new ethers.Contract(
+        airdrop.token.address,
+        tokenAbi,
+        signer
+      )
+
+      // Delegate to self
+      const delegatePromise = async () => {
+        const tx = await tokenContract.delegate(wallets[0].address)
+        await tx.wait()
+        await refetch()
+        return
+      }
+
+      await ToastHelper.promise(delegatePromise(), {
+        loading: 'Delegating your tokens...',
+        success: 'Successfully delegated tokens!',
+        error: 'Failed to delegate tokens. Please try again.',
+      })
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setDelegating(false)
     }
   }
 
@@ -225,14 +268,40 @@ export default function CampaignDetailContent({
 
                   {!claimed ? (
                     <>
-                      {' '}
+                      {!hasDelegated && (
+                        <div className="p-4 mb-4 border rounded-lg bg-yellow-50 border-yellow-200">
+                          <p className="mb-4 text-yellow-800">
+                            Before claiming your tokens, you need to delegate
+                            your voting power. This helps secure the protocol by
+                            allowing you to participate in governance.
+                          </p>
+                          <Button
+                            onClick={onDelegate}
+                            loading={delegating}
+                            disabled={delegating}
+                          >
+                            Delegate Voting Power
+                          </Button>
+                        </div>
+                      )}
+
+                      {hasDelegated && (
+                        <div className="p-4 mb-4 border rounded-lg bg-green-50 border-green-200">
+                          <p className="text-green-800">
+                            ✅ You have delegated your voting power. You can now
+                            claim your tokens.
+                          </p>
+                        </div>
+                      )}
+
                       <Checkbox
                         label="I have read and agree to the Airdrop Terms and Conditions"
                         checked={!!termsOfServiceSignature}
                         onChange={onBoxChecked}
+                        disabled={!hasDelegated}
                       />
                       <Button
-                        disabled={!termsOfServiceSignature}
+                        disabled={!termsOfServiceSignature || !hasDelegated}
                         onClick={onClaim}
                       >
                         Claim Tokens
