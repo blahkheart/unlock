@@ -3,7 +3,15 @@ import { StandardMerkleTree } from '@openzeppelin/merkle-tree'
 import { AbiCoder, ethers } from 'ethers'
 import { usePrivy, useWallets } from '@privy-io/react-auth'
 import { Container } from './layout/Container'
-import { Button, Checkbox, ToastHelper } from '@unlock-protocol/ui'
+import {
+  Select,
+  Button,
+  Checkbox,
+  ToastHelper,
+  AddressInput,
+  isAddressOrEns,
+  ToggleSwitch,
+} from '@unlock-protocol/ui'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { BsArrowLeft as ArrowBackIcon } from 'react-icons/bs'
@@ -14,12 +22,19 @@ import { terms } from '../src/utils/terms'
 import { UPAirdrops } from '@unlock-protocol/contracts'
 import { useEligibility } from './hooks/useEligibility'
 import { useDelegation } from './hooks/useDelegation'
+import { minifyAddress } from '@unlock-protocol/ui'
+import { Web3Service } from '@unlock-protocol/unlock-js'
+import { networks } from '@unlock-protocol/networks'
+import { communityStewards } from '../src/utils/stewards'
 
 interface CampaignDetailContentProps {
   airdrop: AirdropData
 }
 
 const timestamp = new Date().getTime()
+
+// Dev mode flag
+const DEV_MODE = true
 
 const getContract = async (address: string, network: number) => {
   const provider = new ethers.JsonRpcProvider(
@@ -33,6 +48,14 @@ export const hasClaimed = async (
   amount: string,
   airdrop: AirdropData
 ) => {
+  // In development mode, we can simulate the claimed state
+  if (DEV_MODE) {
+    console.log('🧪 DEV MODE: Using mock hasClaimed function')
+    // If address ends with 'claimed', simulate it already being claimed
+    // This lets you test both claimed and unclaimed states by using different wallets
+    return address.toLowerCase().endsWith('claimed')
+  }
+
   const airdropContract = await getContract(
     airdrop.contractAddress,
     airdrop.chainId
@@ -70,6 +93,10 @@ export default function CampaignDetailContent({
   const { wallets } = useWallets()
   const [termsOfServiceSignature, setTermsOfServiceSignature] = useState('')
   const [delegating, setDelegating] = useState(false)
+  const [isSelfDelegate, setIsSelfDelegate] = useState(false)
+  const [useCustomAddress, setUseCustomAddress] = useState(false)
+  const [delegateAddress, setDelegateAddress] = useState('')
+  const [delegateAddressError, setDelegateAddressError] = useState(false)
 
   useEffect(() => {
     setTermsOfServiceSignature('')
@@ -81,12 +108,37 @@ export default function CampaignDetailContent({
   } = useEligibility(airdrop)
 
   const {
-    data: { hasDelegated, canClaim },
+    data: { hasDelegated },
+    refetch: refetchDelegation,
   } = useDelegation(airdrop)
 
   const eligibleFormatted = eligible
     ? ethers.formatUnits(eligible, airdrop.token?.decimals)
     : ''
+
+  const onResolveName = async (address: string) => {
+    if (address.length === 0) return null
+    try {
+      const web3Service = new Web3Service(networks)
+      const result = await web3Service.resolveName(address)
+      if (result) {
+        setDelegateAddress(result?.address)
+        setDelegateAddressError(false)
+      } else {
+        setDelegateAddressError(true)
+      }
+      return result
+    } catch (error) {
+      console.error('Error resolving ENS name:', error)
+      setDelegateAddressError(true)
+      return null
+    }
+  }
+
+  const handleAddressChange = (value: any) => {
+    setDelegateAddress(value ?? '')
+    setDelegateAddressError(!value)
+  }
 
   const onBoxChecked = async () => {
     if (!termsOfServiceSignature) {
@@ -137,25 +189,28 @@ export default function CampaignDetailContent({
 
       await wallets[0].switchChain(airdrop.chainId)
 
-      // Connect to the token contract
       const tokenAbi = ['function delegate(address delegatee) external']
       const tokenContract = new ethers.Contract(
         airdrop.token.address,
         tokenAbi,
         signer
       )
+      const delegatee = isSelfDelegate ? wallets[0].address : delegateAddress
 
-      // Delegate to self
+      if (!ethers.isAddress(delegatee)) {
+        throw new Error('Invalid delegate address')
+      }
+
       const delegatePromise = async () => {
-        const tx = await tokenContract.delegate(wallets[0].address)
+        const tx = await tokenContract.delegate(delegatee)
         await tx.wait()
-        await refetch()
+        await refetchDelegation()
         return
       }
 
       await ToastHelper.promise(delegatePromise(), {
         loading: 'Delegating your tokens...',
-        success: 'Successfully delegated tokens!',
+        success: `Successfully delegated voting power to ${isSelfDelegate ? 'yourself' : delegatee}!`,
         error: 'Failed to delegate tokens. Please try again.',
       })
     } catch (error) {
@@ -275,10 +330,81 @@ export default function CampaignDetailContent({
                             your voting power. This helps secure the protocol by
                             allowing you to participate in governance.
                           </p>
+
+                          {/* delegation UI with ToggleSwitch */}
+                          <div className="space-y-4 mt-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-gray-700">
+                                Delegate to yourself
+                              </span>
+                              <ToggleSwitch
+                                enabled={isSelfDelegate}
+                                setEnabled={setIsSelfDelegate}
+                              />
+                            </div>
+
+                            {!isSelfDelegate && (
+                              <div className="mt-4 space-y-4">
+                                {!useCustomAddress ? (
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Select Community Steward
+                                    </label>
+                                    <Select
+                                      options={[
+                                        ...communityStewards.map((steward) => ({
+                                          label: `${steward.name} - ${minifyAddress(steward.address)}`,
+                                          value: steward.address,
+                                        })),
+                                      ]}
+                                      onChange={handleAddressChange}
+                                      defaultValue={{
+                                        label: 'Select a community steward',
+                                        value: '',
+                                      }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Enter address or ENS name
+                                    </label>
+                                    <div className="relative">
+                                      <AddressInput
+                                        withIcon
+                                        value={delegateAddress}
+                                        onChange={handleAddressChange}
+                                        placeholder="address.eth or 0x..."
+                                        onResolveName={onResolveName}
+                                        disabled={delegating}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-medium text-gray-700">
+                                    Use custom address
+                                  </span>
+                                  <ToggleSwitch
+                                    enabled={useCustomAddress}
+                                    setEnabled={setUseCustomAddress}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
                           <Button
+                            className="mt-4"
                             onClick={onDelegate}
                             loading={delegating}
-                            disabled={delegating}
+                            disabled={
+                              delegating ||
+                              (!isSelfDelegate &&
+                                (!delegateAddress ||
+                                  !isAddressOrEns(delegateAddress) ||
+                                  delegateAddressError))
+                            }
                           >
                             Delegate Voting Power
                           </Button>
