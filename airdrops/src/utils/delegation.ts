@@ -1,4 +1,5 @@
 import { ethers } from 'ethers'
+import { getProvider } from './provider'
 
 export const hasDelegated = async (
   address: string,
@@ -6,9 +7,7 @@ export const hasDelegated = async (
   chainId: number
 ): Promise<boolean> => {
   try {
-    const provider = new ethers.JsonRpcProvider(
-      `https://rpc.unlock-protocol.com/${chainId}`
-    )
+    const provider = getProvider(chainId)
     const delegationAbi = ['function delegates(address) view returns (address)']
     const tokenContract = new ethers.Contract(
       tokenAddress,
