@@ -6,10 +6,12 @@ import {
   Button,
   ImageUpload,
   Modal,
+  AddressInput,
 } from '@unlock-protocol/ui'
 import { z } from 'zod'
 import { useState } from 'react'
 import { useImageUpload } from '~/hooks/useImageUpload'
+import { onResolveName } from '~/utils/resolvers'
 
 interface Props {
   onChange: (values: z.infer<typeof BasicPaywallConfigSchema>) => void
@@ -85,12 +87,22 @@ export const BasicConfigForm = ({ onChange, defaultValues }: Props) => {
         error={errors.title?.message}
       />
 
-      <Input
+      <AddressInput
         label="Referrer Address"
         size="small"
         description={BasicPaywallConfigSchema.shape.referrer.description}
         error={errors.referrer?.message}
-        {...register('referrer', {})}
+        value={watch('referrer')}
+        onChange={(e) => {
+          if (typeof e === 'string') {
+            setValue('referrer', e)
+            handleInputChange()
+          } else if (e && e.target) {
+            setValue('referrer', e.target.value)
+            handleInputChange()
+          }
+        }}
+        onResolveName={onResolveName}
       />
 
       <Input
