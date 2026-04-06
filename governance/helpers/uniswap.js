@@ -210,7 +210,7 @@ const deployUniswapV3Oracle = async function () {
   return oracle
 }
 
-// Build swap parameters for Uniswap V3 SwapRouter
+// Build swap parameters for Uniswap V3 SwapRouter (Exact Input)
 const buildSwapParams = function (
   tokenIn,
   tokenOut,
@@ -232,6 +232,28 @@ const buildSwapParams = function (
   }
 }
 
+// Build swap parameters for Uniswap V3 SwapRouter (Exact Output)
+const buildSwapParamsExactOutput = function (
+  tokenIn,
+  tokenOut,
+  fee,
+  recipient,
+  deadline,
+  amountOut,
+  amountInMaximum
+) {
+  return {
+    tokenIn,
+    tokenOut,
+    fee,
+    recipient,
+    deadline,
+    amountOut,
+    amountInMaximum,
+    sqrtPriceLimitX96: 0,
+  }
+}
+
 // Get quote for exact input swap using Uniswap V3 Quoter
 const getUniswapV3Quote = async function (tokenIn, tokenOut, fee, amountIn) {
   try {
@@ -246,7 +268,6 @@ const getUniswapV3Quote = async function (tokenIn, tokenOut, fee, amountIn) {
       tokenOut,
       amountIn,
       fee,
-      amount: '0',
       sqrtPriceLimitX96: 0,
     }
 
@@ -254,6 +275,37 @@ const getUniswapV3Quote = async function (tokenIn, tokenOut, fee, amountIn) {
     const amountOut = quote[0]
 
     return amountOut
+  } catch (error) {
+    throw error.message
+  }
+}
+
+// Get quote for exact output swap using Uniswap V3 Quoter
+const getUniswapV3QuoteExactOutput = async function (
+  tokenIn,
+  tokenOut,
+  fee,
+  amountOut
+) {
+  try {
+    const QuoterV2ABI = [
+      'function quoteExactOutputSingle((address tokenIn, address tokenOut, uint256 amount, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountIn, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)',
+    ]
+
+    const quoter = await ethers.getContractAt(QuoterV2ABI, QUOTER_ADDRESS)
+
+    const quoteParams = {
+      tokenIn,
+      tokenOut,
+      amount: amountOut,
+      fee,
+      sqrtPriceLimitX96: 0,
+    }
+
+    const quote = await quoter.quoteExactOutputSingle.staticCall(quoteParams)
+    const amountIn = quote[0]
+
+    return amountIn
   } catch (error) {
     throw error.message
   }
@@ -324,7 +376,9 @@ module.exports = {
   getPoolState,
   getPoolImmutables,
   getUniswapV3Quote,
+  getUniswapV3QuoteExactOutput,
   buildSwapParams,
+  buildSwapParamsExactOutput,
   initializeTokens,
   getPoolByAddress,
 }
